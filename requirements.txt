@@ -1,7 +1,11 @@
-playwright>=1.44
+# Pinned exactly: the Docker base image ships browsers for this version only,
+# and a floating pin silently breaks the container on the next release.
+# Bump this and the FROM tag in the Dockerfile together.
+playwright==1.60.0
 requests>=2.31
 beautifulsoup4>=4.12
 openpyxl>=3.1
 python-dotenv>=1.0
 fastapi>=0.110
 uvicorn>=0.27
+python-multipart>=0.0.9

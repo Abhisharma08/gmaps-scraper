@@ -135,9 +135,14 @@
 <body>
 <div class="wrap">
 
-  <header>
-    <h1>Google Maps Scraper</h1>
-    <div class="sub">Business name, address, phone and email &mdash; straight to a spreadsheet.</div>
+  <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+    <div>
+      <h1>Google Maps Scraper</h1>
+      <div class="sub">Business name, address, phone and email &mdash; straight to a spreadsheet.</div>
+    </div>
+    <form method="post" action="/logout" id="logoutForm" class="hidden">
+      <button class="ghost" type="submit">Sign out</button>
+    </form>
   </header>
 
   <div class="panel">
@@ -237,6 +242,11 @@ $('source').onchange = () => {
 
 fetch('/api/config').then(r => r.json()).then(c => {
   if (c.has_api_key) $('apikey').placeholder = 'using GOOGLE_MAPS_API_KEY from .env';
+  if (c.auth) $('logoutForm').classList.remove('hidden');
+  if (c.default_source === 'api') {
+    $('source').value = 'api';
+    $('source').onchange();
+  }
 }).catch(() => {});
 
 function setStatus(cls, text) {

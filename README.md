@@ -100,6 +100,62 @@ python scrape.py "gyms in Mumbai" --no-headless -n 10
 Results are de-duplicated across queries by Maps URL, so overlapping searches are
 safe. `Ctrl-C` mid-run writes whatever has been collected so far.
 
+## Deploying it for a team
+
+**Read this first: Google blocks datacenter IPs.** The `browser` backend works
+from your laptop because you're on a residential connection. From AWS, GCP,
+Render, Fly, Hetzner or any VPS, Google Maps serves CAPTCHAs and consent walls
+to those IP ranges, often within hours. A deployed instance should use
+`--source api` / `DEFAULT_SOURCE=api` for the Maps data. Email lookup still works
+fine from anywhere, since it hits ordinary business websites.
+
+If you want the free browser backend, run it on hardware with a residential IP
+(an office machine, a mini PC) and expose it with a Cloudflare Tunnel rather than
+hosting it in a datacenter.
+
+### Run it
+
+```bash
+cp .env.example .env
+# set at minimum:
+#   APP_PASSWORD=<the shared team password>
+#   APP_SECRET=$(openssl rand -hex 32)
+docker compose up -d --build
+```
+
+The app listens on port 8000 behind a shared-password login. Put it behind a
+reverse proxy with TLS (Caddy, nginx, or your platform's built-in HTTPS), then
+set `COOKIE_SECURE=true` so session cookies stop travelling in the clear.
+
+### Settings that matter in a deployment
+
+| Variable | Why it matters |
+|---|---|
+| `APP_PASSWORD` | The login. Without it the tool is open to anyone who finds the URL. `run_web.py` refuses to bind a public interface without it. |
+| `APP_SECRET` | Signs session cookies. Unset means a random key per boot, so everyone is logged out on every restart or redeploy. |
+| `COOKIE_SECURE` | Set `true` once you're on HTTPS. |
+| `GOOGLE_MAPS_API_KEY` | Server-side Places API key, so users don't each paste one. Restrict it to the Places API in Google Cloud and set a billing cap. |
+| `MAX_CONCURRENT_JOBS` | Default 2. Each browser job holds a Chromium (~1GB); extra jobs queue instead of exhausting the box. |
+| `DEFAULT_SOURCE` | Set `api` to make the sanctioned backend the default in the UI. |
+
+### Sizing and limits
+
+- **RAM:** give it 2GB. 512MB free tiers will OOM mid-scrape when Chromium starts.
+- **One instance only.** Job state lives in memory, so a second replica would
+  answer half the progress polls with "unknown job". Keep the replica count at 1
+  and don't add uvicorn workers.
+- **Restarts lose running jobs.** Finished results are gone too — they're never
+  written to disk, only streamed to the browser and downloaded on demand. Tell
+  people to download their sheet when a run finishes.
+- **Don't use a platform that sleeps idle instances**; it will kill jobs midway.
+
+### Before you point clients at it
+
+The login is a single shared password with no per-user accounts, no audit trail,
+and no rate limiting beyond the concurrency cap. That's proportionate for a small
+internal team. If clients get access, or if a leaked password would mean someone
+burning your Places API budget, it needs real accounts and per-user quotas first.
+
 ## Getting more results
 
 Google caps any single search at ~120 listings (60 via the API). To cover a city

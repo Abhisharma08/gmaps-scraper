@@ -4,6 +4,7 @@ Playwright's sync API refuses to run on a thread with a live asyncio loop, so
 every job gets its own plain thread rather than the server's event loop.
 """
 
+import os
 import threading
 import time
 import uuid
@@ -13,6 +14,11 @@ from typing import Dict, List, Optional
 from gmaps_scraper import email_finder
 from gmaps_scraper.models import Business
 
+# Each browser job holds a Chromium instance (~0.5-1GB). Cap how many run at
+# once so a few simultaneous users can't exhaust a small box; the rest queue.
+MAX_CONCURRENT = max(1, int(os.environ.get("MAX_CONCURRENT_JOBS", "2")))
+_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT)
+
 
 @dataclass
 class Job:
@@ -20,7 +26,7 @@ class Job:
     queries: List[str]
     options: dict
     status: str = "running"  # running | done | cancelled | error
-    phase: str = "starting"  # starting | scraping | emails | finished
+    phase: str = "queued"  # queued | scraping | emails | finished
     log: List[str] = field(default_factory=list)
     businesses: List[Business] = field(default_factory=list)
     error: str = ""
@@ -99,6 +105,18 @@ def start(queries: List[str], options: dict) -> Job:
 
 
 def _run(job: Job) -> None:
+    if not _SLOTS.acquire(blocking=False):
+        job.append_log(
+            "Waiting for a free slot ({} jobs already running)...".format(MAX_CONCURRENT)
+        )
+        _SLOTS.acquire()
+    try:
+        _scrape(job)
+    finally:
+        _SLOTS.release()
+
+
+def _scrape(job: Job) -> None:
     opts = job.options
     seen = set()
 

@@ -1,0 +1,4 @@
+# One search query per line. Lines starting with # are ignored.
+dentists in Austin TX
+plumbers in Austin TX
+coffee shops in Austin TX

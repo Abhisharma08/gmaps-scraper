@@ -49,6 +49,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="output file; .csv, .xlsx or .json (default: results.csv)",
     )
     parser.add_argument(
+        "--near",
+        metavar="LOCATION",
+        help="area sweep: search each QUERY as a bare term (e.g. \"dentists\") "
+        "across a grid of map viewports around LOCATION. This is how you get "
+        "past Google's ~100-per-search ceiling",
+    )
+    parser.add_argument(
+        "--grid",
+        type=int,
+        default=3,
+        help="with --near: grid is GRID x GRID tiles (default: 3, so 9 searches)",
+    )
+    parser.add_argument(
+        "--radius",
+        type=float,
+        default=10.0,
+        help="with --near: half-width of the area in km (default: 10, a 20km square)",
+    )
+    parser.add_argument(
         "-s",
         "--source",
         choices=["browser", "api"],
@@ -122,12 +141,34 @@ def main(argv=None) -> int:
         build_parser().print_help()
         return 1
 
+    if args.near and args.source == "api":
+        print("--near is browser-only; the Places API has no viewport sweep.")
+        return 1
+    if args.near and any(" in " in q for q in queries):
+        print(
+            "With --near, use a bare term ('dentists', not 'dentists in Denver').\n"
+            "Naming a city makes Google repeat the same listings for every tile."
+        )
+        return 1
+
     results: Dict[str, Business] = {}
 
     for query in queries:
         log("\n> {}".format(query))
         try:
-            if args.source == "api":
+            if args.near:
+                from .sources import playwright_source
+
+                stream = playwright_source.scrape_area(
+                    query,
+                    args.near,
+                    max_results=args.max_results,
+                    grid=args.grid,
+                    radius_km=args.radius,
+                    headless=not args.no_headless,
+                    log=log,
+                )
+            elif args.source == "api":
                 from .sources import places_api
 
                 stream = places_api.scrape(

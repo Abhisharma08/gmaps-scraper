@@ -127,7 +127,20 @@ def _scrape(job: Job) -> None:
                 break
             job.append_log("> {}".format(query))
 
-            if opts["source"] == "api":
+            if opts.get("near"):
+                from gmaps_scraper.sources import playwright_source
+
+                stream = playwright_source.scrape_area(
+                    query,
+                    opts["near"],
+                    max_results=opts["max_results"],
+                    grid=opts.get("grid", 3),
+                    radius_km=opts.get("radius", 10.0),
+                    headless=opts.get("headless", True),
+                    log=job.append_log,
+                    should_stop=job.cancel.is_set,
+                )
+            elif opts["source"] == "api":
                 from gmaps_scraper.sources import places_api
 
                 stream = places_api.scrape(

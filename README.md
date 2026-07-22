@@ -156,11 +156,48 @@ and no rate limiting beyond the concurrency cap. That's proportionate for a smal
 internal team. If clients get access, or if a leaked password would mean someone
 burning your Places API budget, it needs real accounts and per-user quotas first.
 
-## Getting more results
+## Getting more than ~100 results
 
-Google caps any single search at ~120 listings (60 via the API). To cover a city
-properly, split the query by neighbourhood or postcode and let the de-duplication
-merge them:
+**Google ends every search at roughly 100 listings.** Scroll further and the panel
+literally says "You've reached the end of the list" — measured at 99 for
+`restaurants in Denver CO`. Re-running the same search returns the same listings,
+because Google's ranking is deterministic. Neither is a scraper bug, and no amount
+of scrolling gets past it.
+
+Each *map viewport* gets its own ~100 results, though. Wide-area mode sweeps a grid
+of viewports across a region and merges them:
+
+```bash
+python scrape.py "restaurants" --near "Denver CO" --grid 3 --radius 10 -n 500
+```
+
+In the web UI, tick **Search a wide area** and fill in the location.
+
+That returned 300 unique Denver restaurants in one run — three times the ceiling —
+and it stopped only because it hit `-n 300`, four tiles into nine.
+
+**Use a bare term.** `restaurants`, not `restaurants in Denver`. This matters more
+than it looks: naming a city makes Google re-run the text search and return nearly
+identical listings for every tile, so the sweep gains you almost nothing. The CLI
+and the UI both reject queries containing " in " when a location is set.
+
+| Flag | Meaning |
+|---|---|
+| `--near "Denver CO"` | Centre of the area. Turns on the sweep. |
+| `--grid 3` | 3&times;3 = 9 tiles. More tiles, more coverage, more time. |
+| `--radius 10` | Half-width in km, so `10` sweeps a 20&times;20km square. |
+
+Sizing: `--grid` &times; `--grid` searches, each up to ~100 listings, then ~2s per
+listing to open its detail page. A 3&times;3 sweep capped at 300 results takes about
+10 minutes. Pick `--radius` to match the city — 10km suits a metro area, 3-5km a
+single town.
+
+Listings from outside the area are dropped automatically: when a viewport is
+sparse, Google sometimes mixes in results from wherever your IP is, and a sweep of
+Denver should not return restaurants in Patna. Anything beyond 1.5&times; the radius
+is discarded before its page is opened.
+
+Splitting queries by suburb still works too, and composes with everything else:
 
 ```
 dentists in Round Rock TX

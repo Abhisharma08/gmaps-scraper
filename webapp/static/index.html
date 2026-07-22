@@ -146,8 +146,43 @@
   </header>
 
   <div class="panel">
-    <label for="queries">Search queries <span class="hint">&mdash; one per line</span></label>
+    <label for="queries">Search queries <span class="hint" id="qHint">&mdash; one per line</span></label>
     <textarea id="queries" placeholder="dentists in Austin TX&#10;plumbers in Round Rock TX"></textarea>
+
+    <div style="margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:8px">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;font-weight:600">
+        <input id="wide" type="checkbox" style="width:auto">
+        Search a wide area <span class="hint">&mdash; get past Google's ~100-result limit</span>
+      </label>
+      <div id="wideOpts" class="hidden">
+        <div class="grid" style="margin-top:14px">
+          <div>
+            <label for="near">Location</label>
+            <input id="near" placeholder="Denver CO">
+          </div>
+          <div>
+            <label for="grid">Grid</label>
+            <select id="grid">
+              <option value="2">2 &times; 2 (4 tiles)</option>
+              <option value="3" selected>3 &times; 3 (9 tiles)</option>
+              <option value="4">4 &times; 4 (16 tiles)</option>
+              <option value="5">5 &times; 5 (25 tiles)</option>
+            </select>
+          </div>
+          <div>
+            <label for="radius">Area half-width (km)</label>
+            <input id="radius" type="number" min="1" max="100" value="10">
+          </div>
+        </div>
+        <div class="foot" style="margin-top:10px">
+          Google caps any one search near 100 listings, but each map viewport gets
+          its own. This sweeps a grid of viewports and merges them, so use a
+          <strong>bare term</strong> &mdash; <code>dentists</code>, not
+          <code>dentists in Denver</code>. Naming a city makes Google repeat the
+          same listings for every tile.
+        </div>
+      </div>
+    </div>
 
     <div class="grid">
       <div>
@@ -240,6 +275,16 @@ $('source').onchange = () => {
   $('keyBox').classList.toggle('hidden', $('source').value !== 'api');
 };
 
+$('wide').onchange = () => {
+  const on = $('wide').checked;
+  $('wideOpts').classList.toggle('hidden', !on);
+  $('qHint').innerHTML = on
+    ? '&mdash; bare terms, one per line (no city names)'
+    : '&mdash; one per line';
+  $('queries').placeholder = on ? 'dentists\nplumbers' : 'dentists in Austin TX\nplumbers in Round Rock TX';
+  if (on && +$('max').value < 200) $('max').value = 300;
+};
+
 fetch('/api/config').then(r => r.json()).then(c => {
   if (c.has_api_key) $('apikey').placeholder = 'using GOOGLE_MAPS_API_KEY from .env';
   if (c.auth) $('logoutForm').classList.remove('hidden');
@@ -287,11 +332,15 @@ function reset() {
 $('run').onclick = async () => {
   const queries = $('queries').value.trim();
   if (!queries) { $('queries').focus(); return; }
+  if ($('wide').checked && !$('near').value.trim()) { $('near').focus(); return; }
 
   const body = {
     queries,
     max_results: +$('max').value || 50,
     source: $('source').value,
+    near: $('wide').checked ? $('near').value.trim() : '',
+    grid: +$('grid').value || 3,
+    radius: +$('radius').value || 10,
     api_key: $('apikey').value.trim(),
     find_emails: $('emails').checked,
     emails_only: $('emailsOnly').checked,

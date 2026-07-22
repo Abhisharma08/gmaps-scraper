@@ -33,6 +33,9 @@ class ScrapeRequest(BaseModel):
     queries: str = Field(..., description="one query per line")
     max_results: int = 50
     source: str = "browser"
+    near: str = ""  # area sweep: search each term around this location
+    grid: int = 3
+    radius: float = 10.0
     api_key: str = ""
     find_emails: bool = True
     emails_only: bool = False
@@ -115,11 +118,30 @@ def start_scrape(req: ScrapeRequest, _=Depends(auth.require)) -> dict:
             400, "The Places API needs a key. Paste one, or set GOOGLE_MAPS_API_KEY."
         )
 
+    near = req.near.strip()
+    if near:
+        if req.source == "api":
+            raise HTTPException(
+                400, "Wide-area search is browser-only; the Places API has no sweep."
+            )
+        offenders = [q for q in queries if " in " in q]
+        if offenders:
+            raise HTTPException(
+                400,
+                "With a location set, use bare terms - {!r} names a place, which "
+                "makes Google repeat the same listings for every tile.".format(
+                    offenders[0]
+                ),
+            )
+
     job = jobs.start(
         queries,
         {
-            "max_results": max(1, min(req.max_results, 500)),
+            "max_results": max(1, min(req.max_results, 2000)),
             "source": req.source,
+            "near": near,
+            "grid": max(1, min(req.grid, 8)),
+            "radius": max(0.5, min(req.radius, 100.0)),
             "api_key": req.api_key.strip(),
             "find_emails": req.find_emails,
             "emails_only": req.emails_only,

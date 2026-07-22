@@ -58,7 +58,9 @@ def _dismiss_consent(page) -> None:
             continue
 
 
-def _collect_place_urls(page, query: str, max_results: int, log) -> List[str]:
+def _collect_place_urls(
+    page, query: str, max_results: int, log, should_stop
+) -> List[str]:
     page.goto(SEARCH_URL.format(query=urllib.parse.quote(query)), timeout=60000)
     _dismiss_consent(page)
 
@@ -75,7 +77,7 @@ def _collect_place_urls(page, query: str, max_results: int, log) -> List[str]:
     seen = set()
     stagnant = 0
 
-    while len(urls) < max_results and stagnant < 5:
+    while len(urls) < max_results and stagnant < 5 and not should_stop():
         for href in page.locator(CARD).evaluate_all(
             "els => els.map(e => e.href)"
         ):
@@ -87,6 +89,9 @@ def _collect_place_urls(page, query: str, max_results: int, log) -> List[str]:
             break
 
         before = len(urls)
+        # The results panel is the only progress signal until detail parsing
+        # starts, so report it rather than leaving the UI on "0 found".
+        log("  scrolling results... {} listings so far".format(len(urls)))
         page.locator(FEED).evaluate("el => el.scrollBy(0, el.scrollHeight)")
         page.wait_for_timeout(2000)
 
@@ -172,8 +177,14 @@ def scrape(
     max_results: int = 50,
     headless: bool = True,
     log=print,
+    should_stop=None,
 ) -> Iterator[Business]:
-    """Yield businesses for a Google Maps search query."""
+    """Yield businesses for a Google Maps search query.
+
+    `should_stop` is polled during the (slow) scrolling phase as well as between
+    listings, so a cancel from the UI takes effect promptly.
+    """
+    should_stop = should_stop or (lambda: False)
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:  # pragma: no cover
@@ -195,9 +206,11 @@ def scrape(
         )
         page = context.new_page()
         try:
-            urls = _collect_place_urls(page, query, max_results, log)
+            urls = _collect_place_urls(page, query, max_results, log, should_stop)
             log("  found {} listings, opening each for details".format(len(urls)))
             for i, url in enumerate(urls, 1):
+                if should_stop():
+                    break
                 try:
                     biz = _parse_place(page, url, query)
                 except Exception as exc:

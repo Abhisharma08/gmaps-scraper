@@ -31,7 +31,25 @@ Google Cloud (enable *Places API (New)* + billing):
 cp .env.example .env
 ```
 
-## Usage
+## The web UI (easiest way to use it)
+
+```bash
+python run_web.py
+```
+
+That starts a local server and opens <http://127.0.0.1:8000> in your browser.
+Type your searches (one per line), press **Start scraping**, and watch results
+fill in live. When it finishes, download CSV, Excel or JSON with one click.
+
+The page has a **Stop** button that halts mid-run and keeps whatever was found,
+an **Advanced** section for the email-crawl settings, and a **Show browser
+window** toggle so you can watch Chromium work.
+
+Nothing leaves your machine — the server is local and bound to 127.0.0.1.
+Use `python run_web.py --port 9000` to change the port, or `--host 0.0.0.0` to
+reach it from another device on your network.
+
+## Usage from the command line
 
 ```bash
 python scrape.py "dentists in Austin TX" -n 60 -o dentists.csv
@@ -97,7 +115,8 @@ dentists in 78704
 ## Layout
 
 ```
-scrape.py                  entry point
+scrape.py                  CLI entry point
+run_web.py                 web UI entry point
 gmaps_scraper/
   cli.py                   argument parsing, run loop, summary
   models.py                Business dataclass + column order
@@ -106,6 +125,10 @@ gmaps_scraper/
   sources/
     playwright_source.py   browser scraping
     places_api.py          Google Places API (New)
+webapp/
+  server.py                FastAPI routes
+  jobs.py                  background job runner + progress tracking
+  static/index.html        the whole frontend, one file
 ```
 
 ## Notes
@@ -118,3 +141,6 @@ gmaps_scraper/
 - If the browser backend suddenly returns nothing, Google likely changed their
   markup. Run with `--no-headless` to see what's happening; the selectors are all
   at the top of `sources/playwright_source.py`.
+- Some sites block automated clients outright (HTTP 403). Those get a second pass
+  in a real browser, which recovers most of them — but a few block headless
+  Chromium too and simply can't be read.

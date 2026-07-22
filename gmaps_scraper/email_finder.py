@@ -7,7 +7,7 @@ fetch the homepage, then follow up to a few likely contact pages.
 import re
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from typing import Iterable, List, Set
+from typing import Iterable, List, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -24,7 +24,17 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-CONTACT_HINTS = ("contact", "about", "impressum", "kontakt", "reach-us", "connect")
+# Ordered best-first: a real "contact" page beats an "about" page, which is why
+# links are ranked by hint index rather than by where they sit in the DOM.
+CONTACT_HINTS = (
+    "contact",
+    "kontakt",
+    "impressum",
+    "reach-us",
+    "get-in-touch",
+    "connect",
+    "about",
+)
 
 # Retina image names (logo@2x.png) and tracking/CDN addresses match the email
 # pattern but are never real contacts.
@@ -87,13 +97,16 @@ def _extract(html: str) -> Set[str]:
 def _contact_links(html: str, base_url: str, limit: int) -> List[str]:
     soup = BeautifulSoup(html, "html.parser")
     base_host = urllib.parse.urlparse(base_url).netloc
-    links: List[str] = []
+    scored = []
     seen = set()
 
     for a in soup.find_all("a", href=True):
         href = a["href"]
         haystack = (href + " " + a.get_text(" ")).lower()
-        if not any(hint in haystack for hint in CONTACT_HINTS):
+        rank = next(
+            (i for i, hint in enumerate(CONTACT_HINTS) if hint in haystack), None
+        )
+        if rank is None:
             continue
         absolute = urllib.parse.urljoin(base_url, href).split("#")[0]
         if urllib.parse.urlparse(absolute).netloc != base_host:
@@ -101,61 +114,145 @@ def _contact_links(html: str, base_url: str, limit: int) -> List[str]:
         if absolute in seen or absolute.rstrip("/") == base_url.rstrip("/"):
             continue
         seen.add(absolute)
-        links.append(absolute)
-        if len(links) >= limit:
-            break
+        # Shallower paths first within a rank: /contact beats /about/history.
+        scored.append((rank, absolute.count("/"), len(scored), absolute))
 
-    return links
+    scored.sort()
+    return [url for _, _, _, url in scored[:limit]]
 
 
-def _fetch(url: str, timeout: float) -> str:
+# Status codes that mean "a browser would have got in, this client didn't".
+BLOCKED_STATUSES = (401, 403, 405, 406, 429, 503)
+
+
+def _fetch(url: str, timeout: float) -> Tuple[str, bool]:
+    """Return (html, blocked). `blocked` marks pages worth a browser retry."""
     try:
         response = requests.get(
             url, headers=HEADERS, timeout=timeout, allow_redirects=True
         )
-        content_type = response.headers.get("Content-Type", "")
-        if response.status_code != 200 or "html" not in content_type:
-            return ""
-        return response.text
     except requests.RequestException:
-        return ""
+        return "", False
+
+    if response.status_code in BLOCKED_STATUSES:
+        return "", True
+    if response.status_code != 200:
+        return "", False
+    if "html" not in response.headers.get("Content-Type", ""):
+        return "", False
+    return response.text, False
+
+
+def _normalise(website: str) -> str:
+    if not website.startswith(("http://", "https://")):
+        return "https://" + website
+    return website
+
+
+def _scan(website: str, timeout: float, max_pages: int) -> Tuple[List[str], bool]:
+    home, blocked = _fetch(website, timeout)
+    if not home:
+        return [], blocked
+
+    emails = _extract(home)
+    if not emails:
+        # Only pay for extra requests when the homepage came up empty.
+        for link in _contact_links(home, website, max_pages - 1):
+            page, _ = _fetch(link, timeout)
+            emails |= _extract(page)
+            if emails:
+                break
+
+    return sorted(emails), False
 
 
 def find_emails(website: str, timeout: float = 12.0, max_pages: int = 3) -> List[str]:
     """Return emails found on a website's homepage and its contact pages."""
     if not website:
         return []
-    if not website.startswith(("http://", "https://")):
-        website = "https://" + website
-
-    home = _fetch(website, timeout)
-    if not home:
-        return []
-
-    emails = _extract(home)
-    if not emails:
-        # Only pay for extra requests when the homepage came up empty.
-        for link in _contact_links(home, website, max_pages - 1):
-            emails |= _extract(_fetch(link, timeout))
-            if emails:
-                break
-
-    return sorted(emails)
+    return _scan(_normalise(website), timeout, max_pages)[0]
 
 
-def enrich(businesses: Iterable, workers: int = 8, log=print, **kwargs) -> None:
+def _render_scan(items, timeout: float, max_pages: int, log) -> None:
+    """Second pass for bot-blocked sites, using a real browser.
+
+    Runs sequentially in one browser: these are the minority of sites, and a
+    Playwright instance per worker thread would cost more than it saves.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return
+
+    log("  {} sites blocked plain requests - retrying in a browser...".format(len(items)))
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            locale="en-US", user_agent=HEADERS["User-Agent"]
+        )
+        page = context.new_page()
+        try:
+            for biz in items:
+                url = _normalise(biz.website)
+                try:
+                    page.goto(url, timeout=int(timeout * 1000), wait_until="domcontentloaded")
+                    page.wait_for_timeout(700)
+                    html = page.content()
+                except Exception:
+                    continue
+
+                emails = _extract(html)
+                if not emails:
+                    for link in _contact_links(html, url, max_pages - 1):
+                        try:
+                            page.goto(
+                                link,
+                                timeout=int(timeout * 1000),
+                                wait_until="domcontentloaded",
+                            )
+                            page.wait_for_timeout(500)
+                            emails |= _extract(page.content())
+                        except Exception:
+                            continue
+                        if emails:
+                            break
+
+                if emails:
+                    biz.emails = sorted(emails)
+                    log("  {} -> {}".format(biz.name, ", ".join(biz.emails)))
+        finally:
+            context.close()
+            browser.close()
+
+
+def enrich(
+    businesses: Iterable,
+    workers: int = 8,
+    log=print,
+    render_blocked: bool = True,
+    timeout: float = 12.0,
+    max_pages: int = 3,
+) -> None:
     """Populate `.emails` on each business in parallel, in place."""
     items = [b for b in businesses if b.website and not b.emails]
     if not items:
         return
 
     log("Looking up emails for {} websites...".format(len(items)))
+    blocked = []
 
     def work(biz):
-        biz.emails = find_emails(biz.website, **kwargs)
-        return biz
+        emails, was_blocked = _scan(_normalise(biz.website), timeout, max_pages)
+        biz.emails = emails
+        return biz, was_blocked
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for biz in pool.map(work, items):
+        for biz, was_blocked in pool.map(work, items):
             if biz.emails:
                 log("  {} -> {}".format(biz.name, ", ".join(biz.emails)))
+            elif was_blocked:
+                blocked.append(biz)
+
+    if blocked and render_blocked:
+        _render_scan(blocked, timeout, max_pages, log)

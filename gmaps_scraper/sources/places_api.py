@@ -57,7 +57,9 @@ def scrape(
     max_results: int = 50,
     api_key: Optional[str] = None,
     log=print,
+    should_stop=None,
 ) -> Iterator[Business]:
+    should_stop = should_stop or (lambda: False)
     key = api_key or os.environ.get("GOOGLE_MAPS_API_KEY", "")
     if not key:
         raise SystemExit(
@@ -73,7 +75,7 @@ def scrape(
     page_token = None
     yielded = 0
 
-    while yielded < max_results:
+    while yielded < max_results and not should_stop():
         body = {"textQuery": query, "pageSize": min(PAGE_SIZE, max_results - yielded)}
         if page_token:
             body["pageToken"] = page_token

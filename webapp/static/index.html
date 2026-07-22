@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Maps Scraper</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #14181f;
+    --muted: #667085;
+    --line: #e3e6eb;
+    --accent: #2563eb;
+    --accent-ink: #ffffff;
+    --good: #0f855b;
+    --bad: #c0392b;
+    --code-bg: #0f1420;
+    --code-ink: #cbd5e1;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --panel: #171b21;
+      --ink: #e8ebef;
+      --muted: #98a2b3;
+      --line: #2a3039;
+      --accent: #4f8cff;
+      --good: #34d399;
+      --bad: #f87171;
+      --code-bg: #0a0d13;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { margin-bottom: 22px; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13.5px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .hint { font-weight: 400; color: var(--muted); }
+  textarea, input, select {
+    width: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font: inherit;
+  }
+  textarea { min-height: 96px; resize: vertical; font-size: 14px; }
+  textarea:focus, input:focus, select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .checks { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+  .checks label { display: flex; align-items: center; gap: 7px; font-weight: 500; margin: 0; }
+  .checks input { width: auto; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 9px 18px;
+    cursor: pointer;
+  }
+  .primary { background: var(--accent); color: var(--accent-ink); }
+  .ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .adv { margin-top: 14px; }
+  .adv summary { cursor: pointer; color: var(--muted); font-size: 13.5px; }
+  .stats { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stat .n { font-size: 24px; font-weight: 650; letter-spacing: -0.02em; }
+  .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .status { display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.run { background: var(--accent); animation: pulse 1.2s infinite; }
+  .dot.done { background: var(--good); }
+  .dot.err { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .25; } }
+  pre.log {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: 8px;
+    padding: 12px 14px;
+    max-height: 240px;
+    overflow: auto;
+    font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); position: sticky; top: 0; }
+  tr:last-child td { border-bottom: none; }
+  td.name { font-weight: 600; }
+  td.email { color: var(--good); }
+  a { color: var(--accent); }
+  .err {
+    background: color-mix(in srgb, var(--bad) 12%, transparent);
+    border: 1px solid var(--bad);
+    color: var(--bad);
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 13.5px;
+    margin-bottom: 14px;
+  }
+  .hidden { display: none; }
+  .foot { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Google Maps Scraper</h1>
+    <div class="sub">Business name, address, phone and email &mdash; straight to a spreadsheet.</div>
+  </header>
+
+  <div class="panel">
+    <label for="queries">Search queries <span class="hint">&mdash; one per line</span></label>
+    <textarea id="queries" placeholder="dentists in Austin TX&#10;plumbers in Round Rock TX"></textarea>
+
+    <div class="grid">
+      <div>
+        <label for="max">Results per query</label>
+        <input id="max" type="number" min="1" max="500" value="50">
+      </div>
+      <div>
+        <label for="source">Source</label>
+        <select id="source">
+          <option value="browser">Browser (free)</option>
+          <option value="api">Places API (key)</option>
+        </select>
+      </div>
+      <div id="keyBox" class="hidden">
+        <label for="apikey">API key</label>
+        <input id="apikey" type="password" placeholder="AIza...">
+      </div>
+    </div>
+
+    <div class="checks">
+      <label><input id="emails" type="checkbox" checked> Find emails on websites</label>
+      <label><input id="emailsOnly" type="checkbox"> Only keep rows with an email</label>
+      <label><input id="headful" type="checkbox"> Show browser window</label>
+    </div>
+
+    <details class="adv">
+      <summary>Advanced</summary>
+      <div class="grid">
+        <div>
+          <label for="workers">Parallel site fetches</label>
+          <input id="workers" type="number" min="1" max="32" value="8">
+        </div>
+        <div>
+          <label for="pages">Pages per site</label>
+          <input id="pages" type="number" min="1" max="10" value="3">
+        </div>
+        <div>
+          <label for="timeout">Request timeout (s)</label>
+          <input id="timeout" type="number" min="2" max="60" step="1" value="12">
+        </div>
+      </div>
+    </details>
+
+    <div class="actions">
+      <button id="run" class="primary">Start scraping</button>
+      <button id="stop" class="ghost hidden">Stop</button>
+      <div id="status" class="status hidden"><span class="dot"></span><span id="statusText"></span></div>
+    </div>
+    <div class="foot">Google caps a single search near 120 listings (60 via the API). Split a city by suburb or postcode &mdash; duplicates are merged automatically.</div>
+  </div>
+
+  <div id="results" class="panel hidden">
+    <div id="error" class="err hidden"></div>
+
+    <div class="stats">
+      <div class="stat"><div class="n" id="sTotal">0</div><div class="k">Businesses</div></div>
+      <div class="stat"><div class="n" id="sPhone">0</div><div class="k">With phone</div></div>
+      <div class="stat"><div class="n" id="sSite">0</div><div class="k">With website</div></div>
+      <div class="stat"><div class="n" id="sEmail">0</div><div class="k">With email</div></div>
+    </div>
+
+    <div class="actions" style="margin-top:0;margin-bottom:14px">
+      <button class="ghost dl" data-fmt="csv" disabled>Download CSV</button>
+      <button class="ghost dl" data-fmt="xlsx" disabled>Download Excel</button>
+      <button class="ghost dl" data-fmt="json" disabled>Download JSON</button>
+    </div>
+
+    <details open>
+      <summary class="hint" style="cursor:pointer;margin-bottom:8px">Activity log</summary>
+      <pre class="log" id="log"></pre>
+    </details>
+
+    <div class="tablewrap" style="margin-top:14px">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Website</th><th>Rating</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let jobId = null, timer = null, sinceLog = 0, sinceRows = 0, version = 0;
+
+$('source').onchange = () => {
+  $('keyBox').classList.toggle('hidden', $('source').value !== 'api');
+};
+
+fetch('/api/config').then(r => r.json()).then(c => {
+  if (c.has_api_key) $('apikey').placeholder = 'using GOOGLE_MAPS_API_KEY from .env';
+}).catch(() => {});
+
+function setStatus(cls, text) {
+  $('status').classList.remove('hidden');
+  $('status').querySelector('.dot').className = 'dot ' + cls;
+  $('statusText').textContent = text;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function rowHtml(r) {
+  const site = r.website
+    ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">${esc(r.website.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`
+    : '';
+  return `<tr>
+    <td class="name">${esc(r.name)}</td>
+    <td>${esc(r.address)}</td>
+    <td>${esc(r.phone)}</td>
+    <td class="email">${esc(r.emails)}</td>
+    <td>${site}</td>
+    <td>${r.rating == null ? '' : esc(r.rating)}</td>
+  </tr>`;
+}
+
+function reset() {
+  sinceLog = 0; sinceRows = 0; version = 0;
+  $('log').textContent = '';
+  $('rows').innerHTML = '';
+  $('error').classList.add('hidden');
+  $('results').classList.remove('hidden');
+  document.querySelectorAll('.dl').forEach(b => b.disabled = true);
+  ['sTotal', 'sPhone', 'sSite', 'sEmail'].forEach(k => $(k).textContent = '0');
+}
+
+$('run').onclick = async () => {
+  const queries = $('queries').value.trim();
+  if (!queries) { $('queries').focus(); return; }
+
+  const body = {
+    queries,
+    max_results: +$('max').value || 50,
+    source: $('source').value,
+    api_key: $('apikey').value.trim(),
+    find_emails: $('emails').checked,
+    emails_only: $('emailsOnly').checked,
+    headless: !$('headful').checked,
+    workers: +$('workers').value || 8,
+    max_pages: +$('pages').value || 3,
+    timeout: +$('timeout').value || 12
+  };
+
+  $('run').disabled = true;
+  reset();
+  setStatus('run', 'Starting...');
+
+  let res, data;
+  try {
+    res = await fetch('/api/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    data = await res.json();
+  } catch (e) {
+    $('run').disabled = false;
+    setStatus('err', 'Could not reach the server.');
+    return;
+  }
+
+  if (!res.ok) {
+    $('run').disabled = false;
+    setStatus('err', 'Failed to start');
+    $('error').textContent = data.detail || 'Something went wrong.';
+    $('error').classList.remove('hidden');
+    return;
+  }
+
+  jobId = data.job_id;
+  $('stop').classList.remove('hidden');
+  timer = setInterval(poll, 1000);
+  poll();
+};
+
+$('stop').onclick = () => {
+  if (jobId) fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+  $('stop').disabled = true;
+};
+
+async function poll() {
+  if (!jobId) return;
+  let s;
+  try {
+    s = await (await fetch(`/api/jobs/${jobId}?since_log=${sinceLog}&since_rows=${sinceRows}`)).json();
+  } catch (e) { return; }
+
+  if (s.log && s.log.length) {
+    const el = $('log');
+    const stuck = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+    el.textContent += s.log.join('\n') + '\n';
+    if (stuck) el.scrollTop = el.scrollHeight;
+    sinceLog = s.log_count;
+  }
+
+  if (s.version !== version) {
+    // Rows changed underneath us (emails filled in) - redraw the whole table.
+    version = s.version;
+    const all = await (await fetch(`/api/jobs/${jobId}/rows`)).json();
+    $('rows').innerHTML = all.rows.map(rowHtml).join('');
+    sinceRows = all.rows.length;
+  } else if (s.rows && s.rows.length) {
+    $('rows').insertAdjacentHTML('beforeend', s.rows.map(rowHtml).join(''));
+    sinceRows = s.row_count;
+  }
+
+  $('sTotal').textContent = s.stats.total;
+  $('sPhone').textContent = s.stats.phone;
+  $('sSite').textContent = s.stats.website;
+  $('sEmail').textContent = s.stats.email;
+
+  const phase = s.phase === 'emails' ? 'Looking for emails' : 'Scraping Google Maps';
+  if (s.status === 'running') {
+    setStatus('run', `${phase}... ${s.stats.total} found, ${s.elapsed}s`);
+    return;
+  }
+
+  clearInterval(timer);
+  timer = null;
+  $('run').disabled = false;
+  $('stop').classList.add('hidden');
+  $('stop').disabled = false;
+  document.querySelectorAll('.dl').forEach(b => b.disabled = s.stats.total === 0);
+
+  if (s.status === 'error') {
+    setStatus('err', 'Failed');
+    $('error').textContent = s.error;
+    $('error').classList.remove('hidden');
+  } else if (s.status === 'cancelled') {
+    setStatus('done', `Stopped - kept ${s.stats.total} businesses (${s.elapsed}s)`);
+  } else {
+    setStatus('done', `Done - ${s.stats.total} businesses in ${s.elapsed}s`);
+  }
+}
+
+document.querySelectorAll('.dl').forEach(btn => {
+  btn.onclick = () => {
+    if (jobId) window.location = `/api/jobs/${jobId}/download?fmt=${btn.dataset.fmt}`;
+  };
+});
+</script>
+</body>
+</html>

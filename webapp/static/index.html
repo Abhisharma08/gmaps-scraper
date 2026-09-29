@@ -130,6 +130,21 @@
   }
   .hidden { display: none; }
   .foot { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+  .credit {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 8px 18px;
+    margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px;
+  }
+  .credit a { color: var(--ink); font-weight: 600; text-decoration: none; }
+  .credit a:hover { color: var(--accent); }
+  .credit nav { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .credit nav a { font-weight: 500; color: var(--muted); }
+  .credit nav a.star {
+    color: var(--ink); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 11px; background: var(--panel);
+  }
+  .credit nav a.star:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -231,7 +246,7 @@
       <button id="stop" class="ghost hidden">Stop</button>
       <div id="status" class="status hidden"><span class="dot"></span><span id="statusText"></span></div>
     </div>
-    <div class="foot">Google caps a single search near 120 listings (60 via the API). Split a city by suburb or postcode &mdash; duplicates are merged automatically.</div>
+    <div class="foot">Google caps a single search near 100 listings (60 via the API). Split a city by suburb or postcode &mdash; duplicates are merged automatically.</div>
   </div>
 
   <div id="results" class="panel hidden">
@@ -264,6 +279,15 @@
       </table>
     </div>
   </div>
+
+  <footer class="credit">
+    <span>Built by <a href="https://opervia.tech/" target="_blank" rel="noopener">Opervia</a> &middot; independent software studio</span>
+    <nav>
+      <a class="star" href="https://github.com/Abhisharma08/gmaps-scraper" target="_blank" rel="noopener" title="Find it useful? A star on GitHub helps others discover it">&#9733; Star on GitHub</a>
+      <a href="https://github.com/Abhisharma08" target="_blank" rel="noopener" title="Follow on GitHub">@Abhisharma08</a>
+      <a href="https://github.com/Abhisharma08/gmaps-scraper/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    </nav>
+  </footer>
 
 </div>
 

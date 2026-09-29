@@ -12,6 +12,8 @@ services:
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       GOOGLE_MAPS_API_KEY: "${GOOGLE_MAPS_API_KEY:-}"
       MAX_CONCURRENT_JOBS: "${MAX_CONCURRENT_JOBS:-2}"
+      # Datacenter IPs get blocked by Google Maps; "api" is the safer default.
+      DEFAULT_SOURCE: "${DEFAULT_SOURCE:-browser}"
     # Chromium is memory-hungry; give it room or jobs die mid-scrape.
     mem_limit: 2g
     shm_size: 1gb

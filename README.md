@@ -13,7 +13,9 @@ Two interchangeable backends:
 
 > Google Maps never exposes email addresses. Emails come from the business's own
 > website — the homepage first, then contact/about pages if the homepage has none.
-> Expect a 40–60% hit rate.
+> Besides plain text and `mailto:` links it reads schema.org structured data and
+> decodes Cloudflare-protected addresses. Addresses on the business's own domain
+> are listed first. Expect roughly a 40–60% hit rate.
 
 ## Setup
 
@@ -195,7 +197,11 @@ single town.
 Listings from outside the area are dropped automatically: when a viewport is
 sparse, Google sometimes mixes in results from wherever your IP is, and a sweep of
 Denver should not return restaurants in Patna. Anything beyond 1.5&times; the radius
-is discarded before its page is opened.
+is discarded as it's collected, so strays never count toward `-n`.
+
+Tiles are searched centre first, then each next tile is the one farthest from
+those already done. A run that hits `-n` early therefore covers the whole area
+thinly rather than one edge of it thoroughly.
 
 Splitting queries by suburb still works too, and composes with everything else:
 
@@ -237,3 +243,14 @@ webapp/
 - Some sites block automated clients outright (HTTP 403). Those get a second pass
   in a real browser, which recovers most of them — but a few block headless
   Chromium too and simply can't be read.
+
+## Contributing
+
+Issues and pull requests are welcome. The part that breaks most often is the
+browser backend, when Google changes the Maps markup: if you fix a selector,
+please say which country/language you tested from, since Google serves
+different markup to different regions.
+
+## License
+
+[MIT](LICENSE) © 2026 Abhisharma08

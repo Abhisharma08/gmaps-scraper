@@ -180,6 +180,7 @@ def _scrape(job: Job) -> None:
                 log=job.append_log,
                 timeout=opts.get("timeout", 12.0),
                 max_pages=opts.get("max_pages", 3),
+                should_stop=job.cancel.is_set,
             )
             job.version += 1  # rows now carry emails; client refetches
 

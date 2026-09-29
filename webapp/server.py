@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 from gmaps_scraper import exporter
@@ -27,6 +28,19 @@ except ImportError:
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 app = FastAPI(title="Google Maps Scraper", docs_url="/api/docs")
+
+
+@app.on_event("startup")
+def _refuse_open_deployment() -> None:
+    # run_web.py guards the local entry point, but a container starts uvicorn
+    # directly on 0.0.0.0. REQUIRE_AUTH (set in the Dockerfile) makes that
+    # deployment refuse to boot without a password instead of serving an open
+    # scraper to anyone who finds the URL.
+    if os.environ.get("REQUIRE_AUTH", "").lower() in ("1", "true", "yes") and not auth.enabled():
+        raise RuntimeError(
+            "REQUIRE_AUTH is set but APP_PASSWORD is empty - refusing to start "
+            "an unauthenticated server. Set APP_PASSWORD in .env."
+        )
 
 
 class ScrapeRequest(BaseModel):
@@ -194,10 +208,19 @@ def download(job_id: str, fmt: str = "csv", _=Depends(auth.require)) -> FileResp
         c if c.isalnum() or c in "-_" else "-" for c in (job.queries[0][:40] or "results")
     ).strip("-")
     filename = "{}.{}".format(slug or "results", fmt)
-    path = os.path.join(tempfile.gettempdir(), "gmaps-{}-{}".format(job.id, filename))
+    # A unique file per request, so two downloads of the same job can't delete
+    # each other's export mid-send.
+    fd, path = tempfile.mkstemp(prefix="gmaps-{}-".format(job.id), suffix="." + fmt)
+    os.close(fd)
 
     with job._lock:
         rows: List[Business] = list(job.businesses)
     exporter.write(rows, path)
 
-    return FileResponse(path, filename=filename, media_type="application/octet-stream")
+    # The export is rebuilt on every download, so delete it once it's sent.
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="application/octet-stream",
+        background=BackgroundTask(os.remove, path),
+    )

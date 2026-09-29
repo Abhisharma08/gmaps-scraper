@@ -5,7 +5,7 @@ no user database. Enough to keep a deployed instance from being an open scraper
 for anyone who finds the URL.
 
 If APP_PASSWORD is unset, auth is disabled - fine on localhost, refused when the
-server binds a public interface (see run_web.py / server.startup check).
+server binds a public interface (see run_web.py, and REQUIRE_AUTH in server.py).
 """
 
 import base64

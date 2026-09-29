@@ -6,9 +6,12 @@ FROM mcr.microsoft.com/playwright/python:v1.60.0-noble
 
 WORKDIR /app
 
+# REQUIRE_AUTH makes the server refuse to start without APP_PASSWORD, since
+# this image always listens on all interfaces.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    REQUIRE_AUTH=1
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

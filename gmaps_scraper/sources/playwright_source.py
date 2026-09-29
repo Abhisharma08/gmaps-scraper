@@ -70,17 +70,26 @@ def _open_feed(page, url: str, log) -> bool:
         return False
 
 
-def _scroll_collect(page, urls, seen, limit: int, log, should_stop) -> int:
-    """Scroll the open results panel, appending new place URLs. Returns how many."""
+def _scroll_collect(
+    page, urls, seen, limit: int, log, should_stop, accept=None
+) -> int:
+    """Scroll the open results panel, appending new place URLs. Returns how many.
+
+    `accept`, if given, filters URLs before they count toward `limit`, so
+    rejected listings don't use up the budget.
+    """
     added_total = 0
     stagnant = 0
 
     while len(urls) < limit and stagnant < 5 and not should_stop():
         before = len(urls)
+        new_seen = 0
         for href in page.locator(CARD).evaluate_all("els => els.map(e => e.href)"):
             if href not in seen:
                 seen.add(href)
-                urls.append(href)
+                new_seen += 1
+                if accept is None or accept(href):
+                    urls.append(href)
         added_total += len(urls) - before
 
         if len(urls) >= limit:
@@ -98,7 +107,9 @@ def _scroll_collect(page, urls, seen, limit: int, log, should_stop) -> int:
         page.locator(FEED).evaluate("el => el.scrollBy(0, el.scrollHeight)")
         page.wait_for_timeout(2000)
 
-        stagnant = stagnant + 1 if len(urls) == before else 0
+        # Judge progress by listings seen, not accepted: a run of rejected
+        # strays still means the panel is loading more.
+        stagnant = stagnant + 1 if new_seen == 0 else 0
 
     return added_total
 
@@ -169,21 +180,36 @@ def _zoom_for(step_km: float, lat: float) -> float:
 
 
 def _grid_centres(lat: float, lng: float, radius_km: float, n: int):
-    """n x n centres covering a square of side 2*radius_km."""
+    """n x n centres covering a square of side 2*radius_km, in sweep order.
+
+    The order matters because a sweep stops once it has max_results. Scanning
+    row by row meant a capped run covered only the southern rows. Instead the
+    middle tile goes first and each next tile is the one farthest from every
+    tile already chosen, so stopping at any point leaves an evenly spread
+    sample of the area.
+    """
     if n <= 1:
         return [(lat, lng)], radius_km * 2
     step_km = (2.0 * radius_km) / n
     half = (n - 1) / 2.0
     km_per_deg_lng = 111.320 * math.cos(math.radians(lat)) or 1e-6
-    centres = []
-    for row in range(n):
-        for col in range(n):
-            centres.append(
-                (
-                    lat + ((row - half) * step_km) / KM_PER_DEG_LAT,
-                    lng + ((col - half) * step_km) / km_per_deg_lng,
-                )
-            )
+    remaining = [(row - half, col - half) for row in range(n) for col in range(n)]
+    order = [min(remaining, key=lambda rc: rc[0] ** 2 + rc[1] ** 2)]
+    remaining.remove(order[0])
+    while remaining:
+        nxt = max(
+            remaining,
+            key=lambda rc: min((rc[0] - o[0]) ** 2 + (rc[1] - o[1]) ** 2 for o in order),
+        )
+        order.append(nxt)
+        remaining.remove(nxt)
+    centres = [
+        (
+            lat + (dr * step_km) / KM_PER_DEG_LAT,
+            lng + (dc * step_km) / km_per_deg_lng,
+        )
+        for dr, dc in order
+    ]
     return centres, step_km
 
 
@@ -241,6 +267,20 @@ def scrape_area(
                 )
             )
 
+            # Google sometimes mixes in listings from the machine's own region
+            # when a viewport is sparse. Card URLs carry !3d/!4d coordinates, so
+            # strays are rejected as they're collected - before they count
+            # toward max_results or cost a page load.
+            bound_km = radius_km * 1.5
+            strays = [0]
+
+            def in_area(href: str) -> bool:
+                plat, plng = _latlng_from_url(href)
+                if plat is None or _distance_km(centre[0], centre[1], plat, plng) <= bound_km:
+                    return True
+                strays[0] += 1
+                return False
+
             urls: List[str] = []
             seen = set()
             for i, (lat, lng) in enumerate(centres, 1):
@@ -251,28 +291,19 @@ def scrape_area(
                 )
                 if not _open_feed(page, url, log):
                     continue
-                added = _scroll_collect(page, urls, seen, max_results, log, should_stop)
+                added = _scroll_collect(
+                    page, urls, seen, max_results, log, should_stop, accept=in_area
+                )
                 log(
                     "  tile {}/{}: +{} new (total {})".format(
                         i, len(centres), added, len(urls)
                     )
                 )
 
-            # Google sometimes mixes in listings from the machine's own region
-            # when a viewport is sparse. Card URLs carry !3d/!4d coordinates, so
-            # strays can be dropped before we pay to open them.
-            bound_km = radius_km * 1.5
-            in_area, strays = [], 0
-            for url in urls:
-                lat, lng = _latlng_from_url(url)
-                if lat is None or _distance_km(centre[0], centre[1], lat, lng) <= bound_km:
-                    in_area.append(url)
-                else:
-                    strays += 1
-            if strays:
-                log("  dropped {} listings outside the search area".format(strays))
+            if strays[0]:
+                log("  dropped {} listings outside the search area".format(strays[0]))
 
-            urls = in_area[:max_results]
+            urls = urls[:max_results]
             log("  {} unique listings, opening each for details".format(len(urls)))
             for i, url in enumerate(urls, 1):
                 if should_stop():
